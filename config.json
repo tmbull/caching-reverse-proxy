@@ -1,0 +1,24 @@
+{
+  "ListenAddr": ":8080",
+  "TargetUrl": "http://api:8080/",
+  "CachedRoutes": [
+    {
+      "Methods": ["GET"],
+      "Pattern": "/db/query"
+    },
+    {
+      "Methods": ["GET"],
+      "Pattern": "/db/documents/:id"
+    }
+  ],
+  "PassThroughRoutes": [
+    {
+      "Methods": ["POST"],
+      "Pattern": "/db/documents"
+    },
+    {
+      "Methods": ["DELETE"],
+      "Pattern": "/db/documents/:id"
+    }
+  ]
+}

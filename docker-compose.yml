@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  proxy:
+    build: .
+    ports:
+      - "8080:8080"
+  api:
+    build: _api
+    ports:
+      - "8080"
