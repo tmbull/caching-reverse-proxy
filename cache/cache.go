@@ -14,34 +14,40 @@ type Entry struct {
 }
 
 type Cache struct {
-	ttl int64
+	ttl      int64
 	capacity int
 	size     int
 	list     *list.List
-	syncMap  *sync.Map
+	innerMap map[string]*list.Element
+	mu sync.RWMutex
 }
 
 func New(ttlInMillis int64, capacityInBytes int) *Cache {
 	return &Cache {
-		ttl: ttlInMillis,
+		ttl:      ttlInMillis,
 		capacity: capacityInBytes,
 		size:     0,
 		list:     new(list.List),
-		syncMap:  new(sync.Map),
+		innerMap: make(map[string]*list.Element),
 	}
 }
 
 func (cache *Cache) Load(key string) (string, bool) {
-	if entry, ok := cache.syncMap.Load(key); ok {
-		cacheElement := entry.(*list.Element)
+	cache.mu.RLock()
+	entry, ok := cache.innerMap[key]
+	cache.mu.RUnlock()
+	if ok {
+		cacheElement := entry
 		cacheEntry := cacheElement.Value.(*Entry)
 
 		if cacheEntry.timestamp > (nowInMillis() - cache.ttl) {
 			return cacheEntry.value, true
 		} else {
+			cache.mu.Lock()
 			cache.size -= cacheEntry.size
-			cache.syncMap.Delete(cacheEntry.key)
+			delete(cache.innerMap, cacheEntry.key)
 			cache.list.Remove(cacheElement)
+			cache.mu.Unlock()
 		}
 	}
 
@@ -50,12 +56,13 @@ func (cache *Cache) Load(key string) (string, bool) {
 
 func (cache *Cache) Store(key string, value string) {
 	valSize := len(value)
-	if entry, ok := cache.syncMap.Load(key); ok {
-		cache.list.MoveToFront(entry.(*list.Element))
-		cache.size -= entry.(*list.Element).Value.(*Entry).size
+	cache.mu.Lock()
+	if entry, ok := cache.innerMap[key]; ok {
+		cache.list.MoveToFront(entry.Value.(*list.Element))
+		cache.size -= entry.Value.(*list.Element).Value.(*Entry).size
 		cache.size += valSize
 
-		entry.(*list.Element).Value = &Entry{
+		entry.Value.(*list.Element).Value = &Entry{
 			key:   key,
 			value: value,
 			size:  valSize,
@@ -66,7 +73,7 @@ func (cache *Cache) Store(key string, value string) {
 			oldest := cache.list.Back().Value.(*Entry)
 
 			cache.size -= oldest.size
-			cache.syncMap.Delete(oldest.key)
+			delete(cache.innerMap, oldest.key)
 			cache.list.Remove(cache.list.Back())
 		}
 
@@ -78,8 +85,9 @@ func (cache *Cache) Store(key string, value string) {
 			}
 		cache.size += valSize
 		p := cache.list.PushFront(entry)
-		cache.syncMap.Store(key, p)
+		cache.innerMap[key] = p
 	}
+	cache.mu.Unlock()
 }
 
 func nowInMillis() int64 {
