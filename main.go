@@ -2,71 +2,50 @@ package main
 
 import (
 	"github.com/julienschmidt/httprouter"
+	log "github.com/sirupsen/logrus"
 	"github.com/tkanos/gonfig"
-	"log"
+	. "github.com/tmbull/caching-reverse-proxy/proxy"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 )
-
-type Route struct {
-	Methods []string
-	Pattern string
-}
-
-type Config struct {
-	ListenAddr string
-	TargetUrl string
-	CachedRoutes []Route
-	PassThroughRoutes []Route
-}
 
 func main() {
 	config := Config{}
 	err := gonfig.GetConf("config.json", &config)
 
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	targetUrl, err := url.Parse(config.TargetUrl)
 
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(targetUrl)
+	rp := httputil.NewSingleHostReverseProxy(targetUrl)
 	router := httprouter.New()
-	for _, route := range config.CachedRoutes {
-		for _, method := range route.Methods {
-			router.HandlerFunc(method, route.Pattern, cachingHandler(proxy))
-		}
+	proxy := Proxy{
+		Router:       router,
+		ReverseProxy: rp,
 	}
 
+	log.Info("Registering cached routes.")
+	for _, route := range config.CachedRoutes {
+		log.Debugf("Registering route: %v", route)
+		proxy.RegisterRoute(route, proxy.CachingHandler())
+	}
+
+	log.Info("Registering pass through routes.")
 	for _, route := range config.PassThroughRoutes {
-		for _, method := range route.Methods {
-			router.HandlerFunc(method, route.Pattern, passThroughHandler(proxy))
-		}
+		log.Debugf("Registering route: %v", route)
+		proxy.RegisterRoute(route, proxy.PassThroughHandler())
 	}
 
 	err = http.ListenAndServe(config.ListenAddr, router)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
 
-func passThroughHandler(p *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		log.Println(r.URL)
-		w.Header().Set("X-Ben", "Rad")
-		p.ServeHTTP(w, r)
-	}
-}
-
-func cachingHandler(p *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		log.Println(r.URL)
-		w.Header().Set("X-Ben", "Rad")
-		p.ServeHTTP(w, r)
-	}
-}
