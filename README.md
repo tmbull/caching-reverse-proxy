@@ -1,7 +1,13 @@
 # caching-reverse-proxy
 
-This is a reverse proxy that optionally caches the responses from the backend service.
+This is a reverse proxy that optionally caches the responses from the backend service. The proxy is configurable: it can
+have any number of "pass-through" routes which do not do any caching, and any number of "cached" routes. Routes that are
+cached will have successful responses saved to the cache for a period of time (configurable via `CacheTtlInMillis` 
+describe below). 
 
+No attempt is made to update entries in the cache; they will only be replaced after they have expired from the cache or 
+been evicted due to capacity. Once the cache has reached maximum capacity (configurable via `CacheCapacityInBytes`
+described below), items will be evicted on insert to keep the total size of the cache below the maximum capacity.
 
 ## Main project (root directory)
 
@@ -10,6 +16,8 @@ are as follows:
 
 * `ListenAddr` - The `host:port` to listen on.
 * `TargetUrl` - The base URL to target proxied requests to.
+* `CacheTtlInMillis` - The time for a page to live in the cache before being evicted (Value in default Config is 15 minutes)
+* `CacheCapacityInBytes` - The capacity of the cache in bytes (Value in default Config is 1GB)
 * `CachedRoutes` - A list of `Routes` to proxy with caching.
 * `PassThroughRoutes` - A list of `Routes` to proxy without caching.
 
@@ -42,60 +50,12 @@ To build and run the docker-compose file, simply have `docker-compose` installed
 $  docker-compose up --build
 Building proxy
 Step 1/8 : FROM golang:1.15 AS builder
- ---> 3360fba69704
-Step 2/8 : RUN mkdir /app
- ---> Using cache
- ---> 586fa0d7598f
-Step 3/8 : ADD . /app
- ---> cc5b2ff510eb
-Step 4/8 : WORKDIR /app
- ---> Running in 39dae1eeb9b6
-Removing intermediate container 39dae1eeb9b6
- ---> 7b0d2d61e860
-Step 5/8 : RUN CGO_ENABLED=0 GOOS=linux go build -o main ./...
- ---> Running in a51881522c6d
-go: downloading github.com/julienschmidt/httprouter v1.3.0
-go: downloading github.com/tkanos/gonfig v0.0.0-20210106201359-53e13348de2f
-go: downloading github.com/ghodss/yaml v1.0.0
-go: downloading gopkg.in/yaml.v2 v2.4.0
-Removing intermediate container a51881522c6d
- ---> 84a9057c66eb
-
-Step 6/8 : FROM alpine:latest
- ---> 7731472c3f2a
-Step 7/8 : COPY --from=builder /app .
- ---> 947b7c456123
-Step 8/8 : CMD ["./main"]
- ---> Running in 66ba35d864f2
-Removing intermediate container 66ba35d864f2
- ---> a63e855b5ef7
-
+...
 Successfully built a63e855b5ef7
 Successfully tagged caching-reverse-proxy_proxy:latest
 Building api
 Step 1/8 : FROM golang:1.15 AS builder
- ---> 3360fba69704
-Step 2/8 : RUN mkdir /app
- ---> Using cache
- ---> 586fa0d7598f
-Step 3/8 : ADD . /app
- ---> Using cache
- ---> 1ffdafea01a4
-Step 4/8 : WORKDIR /app
- ---> Using cache
- ---> 21275c6dc77a
-Step 5/8 : RUN CGO_ENABLED=0 GOOS=linux go build -o main ./...
- ---> Using cache
- ---> df8b29bfad23
-
-Step 6/8 : FROM alpine:latest
- ---> 7731472c3f2a
-Step 7/8 : COPY --from=builder /app .
- ---> Using cache
- ---> 9c8a6d76cf2b
-Step 8/8 : CMD ["./main"]
- ---> Using cache
- ---> e337512e0250
+...
 
 Successfully built e337512e0250
 Successfully tagged caching-reverse-proxy_api:latest
@@ -104,13 +64,21 @@ Starting caching-reverse-proxy_api_1     ... done
 Attaching to caching-reverse-proxy_api_1, caching-reverse-proxy_proxy_1
 ```
 
-You can now make requests to the proxy server at `localhost:8080`, and press `ctrl+C` when you are done testing:
+You can now make requests to the proxy server at `localhost:8080`, and you should see relevant log messages in your
+`docker-compose` logs:
 
 ```
-proxy_1  | 2021/01/27 02:22:51 /db/documents
-proxy_1  | 2021/01/27 02:22:58 /db/documents/31632d50-3734-4ef8-a290-2313779bdbb0
-proxy_1  | 2021/01/27 02:23:01 /db/documents/31632d50-3734-4ef8-a290-2313779bdbb0
-^CGracefully stopping... (press Ctrl+C again to force)
-Stopping caching-reverse-proxy_proxy_1   ... done
-Stopping caching-reverse-proxy_api_1     ... done
+proxy_1  | time="2021-01-30T05:56:42Z" level=info msg="Registering cached routes."
+proxy_1  | time="2021-01-30T05:56:42Z" level=info msg="Registering pass through routes."
+proxy_1  | time="2021-01-30T05:57:28Z" level=info msg="CachingHandler: Handling GET at URL /db/documents/1a4e5152-9ea6-4aea-a110-50f4138c8611."
+proxy_1  | time="2021-01-30T05:57:48Z" level=info msg="PassThroughHandler: Handling POST at URL /db/documents."
+proxy_1  | time="2021-01-30T05:58:05Z" level=info msg="PassThroughHandler: Handling POST at URL /db/documents."
+proxy_1  | time="2021-01-30T05:58:12Z" level=info msg="CachingHandler: Handling GET at URL /db/documents/a7e754b1-1c77-4778-b292-50e5a3c60106."
 ```
+
+## TODOs
+* [ ] Use more sophisticated cache sizing estimation (currently we do do not account for key size or the overhead of the
+  underlying data structures)
+* [ ] Full performance evaluation with different request sizes, traffic patterns, etc.
+* [ ] Investigate migrating to [fasthttp](https://github.com/valyala/fasthttp)
+* [ ] Investigate using a caching library such as [ristretto](https://github.com/dgraph-io/ristretto)
