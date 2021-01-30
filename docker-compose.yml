@@ -6,5 +6,8 @@ services:
       - "8080:8080"
   api:
     build: _api
+    environment:
+      - USERNAME=tristan
+      - PASSWORD=secretPassword
     ports:
       - "8080"

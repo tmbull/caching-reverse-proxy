@@ -13,14 +13,17 @@ import (
 
 func main() {
 	config := Config{}
-	err := gonfig.GetConf("config.json", &config)
-
-	if err != nil {
+	if err := gonfig.GetConf("config.json", &config); err != nil {
 		log.Fatal(err)
 	}
 
-	targetUrl, err := url.Parse(config.TargetUrl)
+	level, err := log.ParseLevel(config.LogLevel)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.SetLevel(level)
 
+	targetUrl, err := url.Parse(config.TargetUrl)
 	if err != nil {
 		log.Fatal(err)
 	}

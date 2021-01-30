@@ -15,9 +15,13 @@ import (
 func getBackend() *httptest.Server {
 	counter := 0
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte(strconv.Itoa(counter)))
-		counter++
+		if user, pass, ok := r.BasicAuth(); ok && user == "user" && pass == "secretPassword" {
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(strconv.Itoa(counter)))
+			counter++
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
 	}))
 }
 
@@ -49,11 +53,114 @@ func TestProxy_PassThroughHandler(t *testing.T) {
 
 	router := getRouter(u, (*Proxy).PassThroughHandler)
 
-	t.Run("Matching route and method", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/api/things", nil)
-		if err != nil {
-			t.Fatal(err)
+	authTests(t, router)
+
+	routingTests(t, router)
+
+	t.Run("It doesn't cache", func(t *testing.T) {
+		req := getRequest(t, "user", "secretPassword")
+
+		rr1 := httptest.NewRecorder()
+		router.ServeHTTP(rr1, req)
+		if status := rr1.Code; status != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v",
+				status, http.StatusOK)
 		}
+		count0 := rr1.Body
+
+		rr2 := httptest.NewRecorder()
+		router.ServeHTTP(rr2, req)
+		if status := rr1.Code; status != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v",
+				status, http.StatusOK)
+		}
+		count1 := rr2.Body
+
+		if bytes.Equal(count0.Bytes(), count1.Bytes()) {
+			t.Errorf("expected different counts, but both were %v",
+				count0)
+		}
+	})
+}
+
+func TestProxy_CachingHandler(t *testing.T) {
+	backend := getBackend()
+	u, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	router := getRouter(u, (*Proxy).CachingHandler)
+
+	authTests(t, router)
+
+	routingTests(t, router)
+
+	t.Run("It caches", func(t *testing.T) {
+		req := getRequest(t, "user", "secretPassword")
+
+		rr1 := httptest.NewRecorder()
+		router.ServeHTTP(rr1, req)
+		if status := rr1.Code; status != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v",
+				status, http.StatusOK)
+		}
+		count0 := rr1.Body
+
+		rr2 := httptest.NewRecorder()
+		router.ServeHTTP(rr2, req)
+		if status := rr1.Code; status != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v",
+				status, http.StatusOK)
+		}
+		count1 := rr2.Body
+
+		if !bytes.Equal(count0.Bytes(), count1.Bytes()) {
+			t.Errorf("expected same counts: got %v and %v",
+				count0, count1)
+		}
+	})
+}
+
+func getRequest(t *testing.T, username string, password string) *http.Request {
+	req, err := http.NewRequest("GET", "/api/things", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.SetBasicAuth(username, password)
+
+	return req
+}
+
+func authTests(t *testing.T, router *httprouter.Router) {
+	t.Run("It passes through correct Authorization header", func(t *testing.T) {
+		req := getRequest(t, "user", "secretPassword")
+
+
+		rr1 := httptest.NewRecorder()
+		router.ServeHTTP(rr1, req)
+		if status := rr1.Code; status != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v",
+				status, http.StatusOK)
+		}
+	})
+
+	t.Run("It passes through incorrect Authorization header", func(t *testing.T) {
+		req := getRequest(t, "user", "wrongPassword")
+
+
+		rr1 := httptest.NewRecorder()
+		router.ServeHTTP(rr1, req)
+		if status := rr1.Code; status != http.StatusUnauthorized {
+			t.Errorf("handler returned wrong status code: got %v want %v",
+				status, http.StatusUnauthorized)
+		}
+	})
+}
+
+func routingTests(t *testing.T, router *httprouter.Router) {
+	t.Run("Matching route and method", func(t *testing.T) {
+		req := getRequest(t, "user", "secretPassword")
 
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
@@ -91,72 +198,6 @@ func TestProxy_PassThroughHandler(t *testing.T) {
 		if status := rr.Code; status != http.StatusNotFound {
 			t.Errorf("handler returned wrong status code: got %v want %v",
 				status, http.StatusNotFound)
-		}
-	})
-
-	t.Run("It doesn't cache", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/api/things", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		rr1 := httptest.NewRecorder()
-		router.ServeHTTP(rr1, req)
-		if status := rr1.Code; status != http.StatusOK {
-			t.Errorf("handler returned wrong status code: got %v want %v",
-				status, http.StatusOK)
-		}
-		count0 := rr1.Body
-
-		rr2 := httptest.NewRecorder()
-		router.ServeHTTP(rr2, req)
-		if status := rr1.Code; status != http.StatusOK {
-			t.Errorf("handler returned wrong status code: got %v want %v",
-				status, http.StatusOK)
-		}
-		count1 := rr2.Body
-
-		if bytes.Equal(count0.Bytes(), count1.Bytes()) {
-			t.Errorf("expected different counts, but both were %v",
-				count0)
-		}
-	})
-}
-
-func TestProxy_CachingHandler(t *testing.T) {
-	backend := getBackend()
-	u, err := url.Parse(backend.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	router := getRouter(u, (*Proxy).CachingHandler)
-
-	t.Run("It caches", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/api/things", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		rr1 := httptest.NewRecorder()
-		router.ServeHTTP(rr1, req)
-		if status := rr1.Code; status != http.StatusOK {
-			t.Errorf("handler returned wrong status code: got %v want %v",
-				status, http.StatusOK)
-		}
-		count0 := rr1.Body
-
-		rr2 := httptest.NewRecorder()
-		router.ServeHTTP(rr2, req)
-		if status := rr1.Code; status != http.StatusOK {
-			t.Errorf("handler returned wrong status code: got %v want %v",
-				status, http.StatusOK)
-		}
-		count1 := rr2.Body
-
-		if !bytes.Equal(count0.Bytes(), count1.Bytes()) {
-			t.Errorf("expected same counts: got %v and %v",
-				count0, count1)
 		}
 	})
 }

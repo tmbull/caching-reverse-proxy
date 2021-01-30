@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/google/uuid"
@@ -14,13 +15,34 @@ var mu sync.RWMutex
 var documents = make(map[string]map[string]interface{}, 10)
 
 func main() {
+	username := os.Getenv("USERNAME")
+	if username == "" {
+		username = "user"
+	}
+	password := os.Getenv("PASSWORD")
+	if password == "" {
+		password = "password"
+	}
 	r := mux.NewRouter()
 	r.HandleFunc("/db/documents", createDocument).Methods("POST")
 	r.HandleFunc("/db/documents/{id}", deleteDocument).Methods("DELETE")
 	r.HandleFunc("/db/documents/{id}", getDocument).Methods("GET")
 	r.HandleFunc("/db/query", queryDocuments)
+	r.Use(makeAuthMiddleware(username, password))
 
 	log.Fatal(http.ListenAndServe(":8080", r))
+}
+
+func makeAuthMiddleware(username string, password string) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if user, pass, ok := r.BasicAuth(); ok && user == username && pass == password {
+			log.Printf("Authenticated user %s\n", user)
+			next.ServeHTTP(w, r)
+		} else {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		}
+	})}
 }
 
 func createDocument(writer http.ResponseWriter, request *http.Request) {

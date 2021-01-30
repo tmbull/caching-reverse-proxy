@@ -33,7 +33,10 @@ below.
 
 ## `_api` project
 
-This is a simple dummy API backed by an in-memory map used for testing purposes.
+This is a simple dummy API backed by an in-memory map used for testing purposes. This API is "secured" via a Basic Auth
+username/password that is specified via the `USERNAME` and `PASSWORD` environment variables. This is obviously not a
+production-worthy authentication solution, but it is sufficient to verify that the Authorization header is passed
+through to the API and that requests are cached on a per-account basis.
 
 To build, simply `docker build --tag=test-api .` from the `_api` directory or see `docker-compose` sample referenced 
 below.
@@ -65,15 +68,44 @@ Attaching to caching-reverse-proxy_api_1, caching-reverse-proxy_proxy_1
 ```
 
 You can now make requests to the proxy server at `localhost:8080`, and you should see relevant log messages in your
-`docker-compose` logs:
+`docker-compose` logs.
+
+The following example uses the credentials specified for the `_api` in the `docker-compose` file:
 
 ```
-proxy_1  | time="2021-01-30T05:56:42Z" level=info msg="Registering cached routes."
-proxy_1  | time="2021-01-30T05:56:42Z" level=info msg="Registering pass through routes."
-proxy_1  | time="2021-01-30T05:57:28Z" level=info msg="CachingHandler: Handling GET at URL /db/documents/1a4e5152-9ea6-4aea-a110-50f4138c8611."
-proxy_1  | time="2021-01-30T05:57:48Z" level=info msg="PassThroughHandler: Handling POST at URL /db/documents."
-proxy_1  | time="2021-01-30T05:58:05Z" level=info msg="PassThroughHandler: Handling POST at URL /db/documents."
-proxy_1  | time="2021-01-30T05:58:12Z" level=info msg="CachingHandler: Handling GET at URL /db/documents/a7e754b1-1c77-4778-b292-50e5a3c60106."
+$ curl --location --request POST 'http://localhost:8080/db/documents' \
+--header 'Authorization: Basic dHJpc3RhbjpzZWNyZXRQYXNzd29yZA==' \
+--header 'Content-Type: application/json' \
+--data-raw '
+  {
+    "name": "Tristan Bull",
+    "occupation": "Software Engineer"
+  }'
+
+$ curl --location --request GET 'http://localhost:8080/db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a' \
+--header 'Authorization: Basic dHJpc3RhbjpzZWNyZXRQYXNzd29yZA==' \
+--header 'Content-Type: application/json' \
+
+$ curl --location --request GET 'http://localhost:8080/db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a' \
+--header 'Authorization: Basic dHJpc3RhbjpzZWNyZXRQYXNzd29yZA==' \
+--header 'Content-Type: application/json' \
+
+$ curl --location --request GET 'http://localhost:8080/db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a' \
+--header 'Content-Type: application/json'
+```
+
+results in the following log output:
+
+```
+proxy_1  | time="2021-01-30T19:09:27Z" level=info msg="PassThroughHandler: Handling POST at URL /db/documents."
+api_1    | 2021/01/30 19:09:27 Authenticated user tristan
+proxy_1  | time="2021-01-30T19:10:39Z" level=info msg="CachingHandler: Handling GET at URL /db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a."
+proxy_1  | time="2021-01-30T19:10:39Z" level=debug msg="CachingHandler: Did not find key 004471b022eed335d17a30db76b16b97d4a55a75ac330241c5217929fba5dc22-GET-/db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a in cache. Proxying request."
+api_1    | 2021/01/30 19:10:39 Authenticated user tristan
+proxy_1  | time="2021-01-30T19:10:41Z" level=info msg="CachingHandler: Handling GET at URL /db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a."
+proxy_1  | time="2021-01-30T19:10:41Z" level=debug msg="CachingHandler: Found key 004471b022eed335d17a30db76b16b97d4a55a75ac330241c5217929fba5dc22-GET-/db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a in cache."
+proxy_1  | time="2021-01-30T19:10:54Z" level=info msg="CachingHandler: Handling GET at URL /db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a."
+proxy_1  | time="2021-01-30T19:10:54Z" level=debug msg="CachingHandler: Did not find key e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855-GET-/db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a in cache. Proxying request."
 ```
 
 ## TODOs

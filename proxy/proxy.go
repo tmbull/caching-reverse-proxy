@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"github.com/julienschmidt/httprouter"
 	log "github.com/sirupsen/logrus"
@@ -54,7 +55,10 @@ func (proxy *Proxy) RegisterRoute(route Route, handler func(http.ResponseWriter,
 }
 
 func getCacheKey(r *http.Request) string {
-	return fmt.Sprintf("%s-%s", r.Method, r.URL.String())
+	h := sha256.New()
+	h.Write([]byte(r.Header.Get("Authorization")))
+
+	return fmt.Sprintf("%x-%s-%s", h.Sum(nil), r.Method, r.URL.String())
 }
 
 type responseLogger struct {

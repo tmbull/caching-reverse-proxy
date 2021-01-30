@@ -1,4 +1,5 @@
 {
+  "LogLevel": "debug",
   "ListenAddr": ":8080",
   "TargetUrl": "http://api:8080/",
   "CacheTtlInMillis": 900000,
