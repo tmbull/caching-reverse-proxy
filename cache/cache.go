@@ -21,8 +21,8 @@ type Cache struct {
 	syncMap  *sync.Map
 }
 
-func New(ttlInMillis int64, capacityInBytes int) Cache {
-	return Cache {
+func New(ttlInMillis int64, capacityInBytes int) *Cache {
+	return &Cache {
 		ttl: ttlInMillis,
 		capacity: capacityInBytes,
 		size:     0,

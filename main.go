@@ -4,6 +4,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	log "github.com/sirupsen/logrus"
 	"github.com/tkanos/gonfig"
+	"github.com/tmbull/caching-reverse-proxy/cache"
 	. "github.com/tmbull/caching-reverse-proxy/proxy"
 	"net/http"
 	"net/http/httputil"
@@ -26,9 +27,11 @@ func main() {
 
 	rp := httputil.NewSingleHostReverseProxy(targetUrl)
 	router := httprouter.New()
+	c := cache.New(config.CacheTtlInMillis, config.CacheCapacityInBytes)
 	proxy := Proxy{
 		Router:       router,
 		ReverseProxy: rp,
+		Cache: c,
 	}
 
 	log.Info("Registering cached routes.")

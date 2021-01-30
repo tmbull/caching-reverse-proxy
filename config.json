@@ -1,6 +1,8 @@
 {
   "ListenAddr": ":8080",
   "TargetUrl": "http://api:8080/",
+  "CacheTtlInMillis": 900000,
+  "CacheCapacityInBytes": 1073741824,
   "CachedRoutes": [
     {
       "Methods": ["GET"],

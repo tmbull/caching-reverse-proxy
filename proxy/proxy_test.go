@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"bytes"
 	"github.com/julienschmidt/httprouter"
+	"github.com/tmbull/caching-reverse-proxy/cache"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -22,9 +24,11 @@ func getBackend() *httptest.Server {
 func getRouter(u *url.URL, handler func(*Proxy) func(http.ResponseWriter, *http.Request)) *httprouter.Router {
 	rp := httputil.NewSingleHostReverseProxy(u)
 	router := httprouter.New()
+	c := cache.New(1000, 1024*1024)
 	proxy := Proxy{
 		Router:       router,
 		ReverseProxy: rp,
+		Cache: c,
 	}
 
 	route := Route{
@@ -112,7 +116,7 @@ func TestProxy_PassThroughHandler(t *testing.T) {
 		}
 		count1 := rr2.Body
 
-		if count0 == count1 {
+		if bytes.Equal(count0.Bytes(), count1.Bytes()) {
 			t.Errorf("expected different counts, but both were %v",
 				count0)
 		}
@@ -126,7 +130,7 @@ func TestProxy_CachingHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	router := getRouter(u, (*Proxy).PassThroughHandler)
+	router := getRouter(u, (*Proxy).CachingHandler)
 
 	t.Run("It caches", func(t *testing.T) {
 		req, err := http.NewRequest("GET", "/api/things", nil)
@@ -150,7 +154,7 @@ func TestProxy_CachingHandler(t *testing.T) {
 		}
 		count1 := rr2.Body
 
-		if count0 != count1 {
+		if !bytes.Equal(count0.Bytes(), count1.Bytes()) {
 			t.Errorf("expected same counts: got %v and %v",
 				count0, count1)
 		}
