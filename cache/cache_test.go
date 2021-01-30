@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 	"time"
@@ -8,8 +9,8 @@ import (
 
 func TestCache_Sanity(t *testing.T) {
 	cache := New(10, 1000)
-
-	cache.Store("foo", "bar")
+	val := []byte("bar")
+	cache.Store("foo", val)
 
 	result, ok := cache.Load("foo")
 
@@ -17,16 +18,16 @@ func TestCache_Sanity(t *testing.T) {
 		t.Error("Load did not return ok")
 	}
 
-	if result != "bar" {
+	if !bytes.Equal(result, val) {
 		t.Errorf("Load returned wrong value: got %v want %v",
-			result, "bar")
+			result, val)
 	}
 }
 
 func TestCache_TimeBasedEviction(t *testing.T) {
 	cache := New(90, 80)
 
-	cache.Store("foo", "bar")
+	cache.Store("foo", []byte("bar"))
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -41,7 +42,7 @@ func TestCache_SizeBasedEviction(t *testing.T) {
 	keys := make([]string, 10)
 	for i := range keys {
 		keys[i] = fmt.Sprintf("%010d", i) // 10 bytes
-		cache.Store(keys[i], keys[i])
+		cache.Store(keys[i], []byte(keys[i]))
 	}
 
 	for _, key := range keys[:2] {
@@ -58,7 +59,7 @@ func TestCache_SizeBasedEviction(t *testing.T) {
 			t.Error("Load did not return ok")
 		}
 
-		if result != key {
+		if !bytes.Equal(result, []byte(key)) {
 			t.Errorf("Load returned wrong value: got %v want %v",
 				result, key)
 		}

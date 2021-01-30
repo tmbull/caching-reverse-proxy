@@ -31,7 +31,7 @@ func (proxy *Proxy) CachingHandler() func(http.ResponseWriter, *http.Request) {
 		if resp, ok := proxy.Cache.Load(key); ok {
 			log.Debugf("CachingHandler: Found key %v in cache.", key)
 			w.WriteHeader(200)
-			_, err := w.Write([]byte(resp))
+			_, err := w.Write(resp)
 			if err != nil {
 				log.Error(err)
 			}
@@ -41,7 +41,7 @@ func (proxy *Proxy) CachingHandler() func(http.ResponseWriter, *http.Request) {
 			multi := newResponseLogger(&buffer, w)
 			proxy.ReverseProxy.ServeHTTP(multi, r)
 			if multi.StatusCode > 199 && multi.StatusCode < 300  {
-				proxy.Cache.Store(key, string(buffer.Bytes()))
+				proxy.Cache.Store(key, buffer.Bytes())
 			}
 		}
 	}

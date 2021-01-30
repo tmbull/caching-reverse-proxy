@@ -8,7 +8,7 @@ import (
 
 type Entry struct {
 	key string
-	value string
+	value []byte
 	size int
 	timestamp int64
 }
@@ -32,7 +32,7 @@ func New(ttlInMillis int64, capacityInBytes int) *Cache {
 	}
 }
 
-func (cache *Cache) Load(key string) (string, bool) {
+func (cache *Cache) Load(key string) ([]byte, bool) {
 	cache.mu.RLock()
 	entry, ok := cache.innerMap[key]
 	cache.mu.RUnlock()
@@ -51,10 +51,10 @@ func (cache *Cache) Load(key string) (string, bool) {
 		}
 	}
 
-	return "", false
+	return nil, false
 }
 
-func (cache *Cache) Store(key string, value string) {
+func (cache *Cache) Store(key string, value []byte) {
 	valSize := len(value)
 	cache.mu.Lock()
 	if entry, ok := cache.innerMap[key]; ok {
