@@ -2,8 +2,12 @@ package proxy
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/julienschmidt/httprouter"
+	log "github.com/sirupsen/logrus"
 	"github.com/tmbull/caching-reverse-proxy/cache"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -25,21 +29,35 @@ func getBackend() *httptest.Server {
 	}))
 }
 
-func getRouter(u *url.URL, handler func(*Proxy) func(http.ResponseWriter, *http.Request)) *httprouter.Router {
+func getRouter(
+	u *url.URL,
+	ttlInMillis int64,
+	capacityInBytes int,
+	handler func(*Proxy) func(http.ResponseWriter, *http.Request),
+) *httprouter.Router {
 	rp := httputil.NewSingleHostReverseProxy(u)
 	router := httprouter.New()
-	c := cache.New(1000, 1024*1024)
+	c := cache.New(ttlInMillis, capacityInBytes)
 	proxy := Proxy{
 		Router:       router,
 		ReverseProxy: rp,
 		Cache: c,
 	}
 
-	route := Route{
+	routes := []Route{
+		{
 		Methods: []string{"GET"},
-		Pattern: "/api/things",
+		Pattern: "/api/things/:id",
+		},
+		{
+			Methods: []string{"GET"},
+			Pattern: "/api/things",
+		},
 	}
-	proxy.RegisterRoute(route, handler(&proxy))
+
+	for _, route := range routes {
+		proxy.RegisterRoute(route, handler(&proxy))
+	}
 
 	return router
 }
@@ -51,7 +69,7 @@ func TestProxy_PassThroughHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	router := getRouter(u, (*Proxy).PassThroughHandler)
+	router := getRouter(u, 1000, 1024*1024, (*Proxy).PassThroughHandler)
 
 	authTests(t, router)
 
@@ -90,7 +108,7 @@ func TestProxy_CachingHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	router := getRouter(u, (*Proxy).CachingHandler)
+	router := getRouter(u, 1000, 1024*1024, (*Proxy).CachingHandler)
 
 	authTests(t, router)
 
@@ -200,4 +218,101 @@ func routingTests(t *testing.T, router *httprouter.Router) {
 				status, http.StatusNotFound)
 		}
 	})
+}
+
+func getBenchMarkingBackend() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+			numBytes, err := strconv.Atoi(r.URL.Query().Get("bytes"))
+			if err != nil {
+				numBytes = 10
+			}
+			token := make([]byte, numBytes)
+			rand.Read(token)
+	}))
+}
+
+func BenchmarkProxy_CachingHandler(b *testing.B) {
+	log.SetLevel(log.WarnLevel)
+	/*
+	Backend: takes # bytes as query param, returns # random bytes
+
+	Cache Benchmarking params:
+		# Cache capacity
+		# Cache size / capacity
+		# Hit rate
+		# Concurrency: # of concurrent clients
+
+	 */
+	cacheCapacity := 1024*1024*1024
+
+
+	backend := getBenchMarkingBackend()
+	u, err := url.Parse(backend.URL)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	router := getRouter(u, 15*60*1000, cacheCapacity, (*Proxy).CachingHandler)
+
+	requestSizes := []int{100, 1000, 1000000}
+
+	cacheFullness := []float64{0.2, 0.5, 1.0}
+
+	hitRates := []float64{0.0, 0.5, 1.0}
+
+	//numClients := 1
+
+	for _, fullness := range cacheFullness {
+		for _, reqSize := range requestSizes {
+			// This will introduce a slight error to later tests since the cache is not completely rebuilt, but it
+			// drastically reduces the time to run all of the tests with a large cache
+			initialSize := int(float64(cacheCapacity) / float64(reqSize) * fullness)
+			for i := 0; i < initialSize; i++ {
+				req, err := http.NewRequest("GET", fmt.Sprintf("/api/things/%d?bytes=%d", i, reqSize), nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				rr := httptest.NewRecorder()
+				router.ServeHTTP(rr, req)
+
+				if status := rr.Code; status != http.StatusOK {
+					b.Fatalf("handler returned wrong status code: got %v want %v",
+						status, http.StatusOK)
+				}
+			}
+			for _, hitRate := range hitRates {
+				//for numClients := range numClients {
+				//
+				//}
+				b.Run(fmt.Sprintf("Request Size %d Cache Fullness %f Hit Rate %f",
+					reqSize, fullness, hitRate), func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						var max int
+						if hitRate == 0.0 || initialSize == 0 {
+							max = math.MaxInt32
+						} else {
+							max = int(float64(initialSize) * (1 / hitRate))
+						}
+
+						id := rand.Intn(max)
+						req, err := http.NewRequest("GET", fmt.Sprintf("/api/things/%d?bytes=%d", id, reqSize), nil)
+						if err != nil {
+							b.Fatal(err)
+						}
+						rr := httptest.NewRecorder()
+
+						b.StartTimer()
+						router.ServeHTTP(rr, req)
+
+						if status := rr.Code; status != http.StatusOK {
+							b.Fatalf("handler returned wrong status code: got %v want %v",
+								status, http.StatusOK)
+						}
+					}
+				})
+			}
+		}
+	}
 }

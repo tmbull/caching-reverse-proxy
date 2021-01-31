@@ -108,9 +108,80 @@ proxy_1  | time="2021-01-30T19:10:54Z" level=info msg="CachingHandler: Handling 
 proxy_1  | time="2021-01-30T19:10:54Z" level=debug msg="CachingHandler: Did not find key e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855-GET-/db/documents/fea23c45-6606-46b4-9dcb-543d4c12d08a in cache. Proxying request."
 ```
 
+## Benchmarking
+
+There is a simple benchmark in the proxy class that roughly measures the time to process a request based on:
+
+* Request size - 100, 1000, and 1000000 bytes
+* Cache fullness - empty, 50%, 100% full
+* Cache hit rate for incoming requests - 0%, 50%, 100%
+
+The benchmark is executed against a 1GB cache though the size of the cache, and all of the parameters above can be
+edited in the test. Sample output is as follows:
+
+```bash
+$ go test -timeout 30m -bench=. ./proxy
+INFO[0000] PassThroughHandler: Handling GET at URL /api/things.
+INFO[0000] PassThroughHandler: Handling GET at URL /api/things.
+INFO[0000] PassThroughHandler: Handling GET at URL /api/things.
+INFO[0000] PassThroughHandler: Handling GET at URL /api/things.
+INFO[0000] PassThroughHandler: Handling GET at URL /api/things.
+INFO[0000] CachingHandler: Handling GET at URL /api/things.
+INFO[0000] CachingHandler: Handling GET at URL /api/things.
+INFO[0000] CachingHandler: Handling GET at URL /api/things.
+INFO[0000] CachingHandler: Handling GET at URL /api/things.
+INFO[0000] CachingHandler: Handling GET at URL /api/things.
+goos: darwin
+goarch: amd64
+pkg: github.com/tmbull/caching-reverse-proxy/proxy
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_0.200000_Hit_Rate_0.000000-16         	   15819	     86317 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_0.200000_Hit_Rate_0.500000-16         	   31515	     40101 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_0.200000_Hit_Rate_1.000000-16         	  309746	      3860 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_0.200000_Hit_Rate_0.000000-16        	   15102	     73534 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_0.200000_Hit_Rate_0.500000-16        	   32883	     41600 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_0.200000_Hit_Rate_1.000000-16        	  326510	      3891 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_0.200000_Hit_Rate_0.000000-16     	    1419	   1123214 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_0.200000_Hit_Rate_0.500000-16     	  239788	      4461 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_0.200000_Hit_Rate_1.000000-16     	  290043	      3591 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_0.500000_Hit_Rate_0.000000-16         	   16818	     73488 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_0.500000_Hit_Rate_0.500000-16         	   28832	     40576 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_0.500000_Hit_Rate_1.000000-16         	  300903	      3889 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_0.500000_Hit_Rate_0.000000-16        	   14276	     77928 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_0.500000_Hit_Rate_0.500000-16        	   31359	     40209 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_0.500000_Hit_Rate_1.000000-16        	  253030	      3972 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_0.500000_Hit_Rate_0.000000-16     	    1402	   1241353 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_0.500000_Hit_Rate_0.500000-16     	  293360	      4132 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_0.500000_Hit_Rate_1.000000-16     	  323937	      3798 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_1.000000_Hit_Rate_0.000000-16         	   16754	     81800 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_1.000000_Hit_Rate_0.500000-16         	   26288	     58608 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_100_Cache_Fullness_1.000000_Hit_Rate_1.000000-16         	   47733	     21871 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_1.000000_Hit_Rate_0.000000-16        	   13255	     85357 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_1.000000_Hit_Rate_0.500000-16        	   26360	     46424 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000_Cache_Fullness_1.000000_Hit_Rate_1.000000-16        	  247626	      4193 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_1.000000_Hit_Rate_0.000000-16     	    1584	   1236412 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_1.000000_Hit_Rate_0.500000-16     	  294157	      4131 ns/op
+BenchmarkProxy_CachingHandler/Request_Size_1000000_Cache_Fullness_1.000000_Hit_Rate_1.000000-16     	  213274	      4952 ns/op
+PASS
+ok  	github.com/tmbull/caching-reverse-proxy/proxy	1379.427s
+```
+
+Some interesting notes based on the test results:
+
+* Operation time drops as hit rate increases
+  * This is expected behavior since this is the entire reason for 
+caching
+* Large requests (~1MB) have poor performance
+  * This is especially noticeable for low cache rate tests indicating the 
+time to generate the response may actually be factoring into the test results.
+  * It would be worth looking for unnecessary memory allocations
+* A 100% full cache seems to have slightly worse performance in some cases
+  * This is likely due to the fact that records are being evicted from the cache synchronously as part of the request 
+  processing
+
 ## TODOs
 * [ ] Use more sophisticated cache sizing estimation (currently we do do not account for key size or the overhead of the
   underlying data structures)
 * [ ] Full performance evaluation with different request sizes, traffic patterns, etc.
+* [ ] Parallel performance evaluation
 * [ ] Investigate migrating to [fasthttp](https://github.com/valyala/fasthttp)
 * [ ] Investigate using a caching library such as [ristretto](https://github.com/dgraph-io/ristretto)
